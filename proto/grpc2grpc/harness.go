@@ -43,7 +43,7 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	clntSendCount = make([]int64, threads)
 	clntRcvdCount = make([][]int64, threads)
 	for i := range clntRcvdCount {
-		clntRcvdCount[i] = make([]int64, 2)
+		clntRcvdCount[i] = make([]int64, 4)
 		fmt.Println(i)
 	}
 	clntEOFCount = make([]int, threads)
@@ -64,6 +64,7 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	fmt.Println("Exit signal received", time.Now())
 	exitSignal = true
 	var totalRspTm, totalRspTm1, clntSent, clntRcvd int64
+	var minval, maxval int64
 	for {
 		time.Sleep(time.Second)
 		count := 1
@@ -82,9 +83,9 @@ func CallClient(port *string, option *string, name string, data func(data interf
 		}
 		if count != 1 {
 			fmt.Println("All threads completed")
-
+			minval = clntRcvdCount[0][2]
+			maxval = clntRcvdCount[0][3]
 			for i := 0; i < threads; i++ {
-
 				totalRspTm = totalRspTm + clntRcvdCount[i][1]
 				if totalRspTm1 > totalRspTm {
 					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", time.Now())
@@ -93,6 +94,14 @@ func CallClient(port *string, option *string, name string, data func(data interf
 				clntSent = clntSent + clntSendCount[i]
 				clntRcvd = clntRcvd + clntRcvdCount[i][0]
 				totalRspTm1 = totalRspTm
+
+				if minval > clntRcvdCount[i][2] {
+					minval = clntRcvdCount[i][2]
+				}
+
+				if maxval < clntRcvdCount[i][3] {
+					maxval = clntRcvdCount[i][3]
+				}
 			}
 			fmt.Println("totalGrpcCallRcv: ", clntRcvd)
 			fmt.Println("totalGrpcCallSent: ", clntSent)
@@ -100,6 +109,8 @@ func CallClient(port *string, option *string, name string, data func(data interf
 			fmt.Println("Threads:", threads)
 			fmt.Println("TimeBtwnMessages:30Ms")
 			fmt.Println("TimeBtwnThread:10Ms")
+			fmt.Println("min tmstmp res: ", minval)
+			fmt.Println("max tmstmp res: ", maxval)
 
 			return nil, nil
 		}
@@ -149,7 +160,23 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", ttlRspTm, rspTm)
 					os.Exit(1)
 				}
+
 				ttlRspTm = ttlRspTm + rspTm
+
+				if crc == 1 {
+					clntRcvdCount[thread][2] = rspTm
+					clntRcvdCount[thread][3] = rspTm
+				}
+				// min tmstmp check
+				if rspTm < clntRcvdCount[thread][2] {
+					clntRcvdCount[thread][2] = rspTm
+				}
+
+				// max tmstmp check
+				if rspTm > clntRcvdCount[thread][3] {
+					clntRcvdCount[thread][3] = rspTm
+				}
+
 				if data != nil {
 					data(user)
 				}
