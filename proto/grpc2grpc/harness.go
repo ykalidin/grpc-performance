@@ -122,7 +122,14 @@ func CallClient(port *string, option *string, name string, data func(data interf
 func responseTime(threads int) {
 	tick := time.Tick(1 * time.Second)
 	var totalCrc, total int64
+	var clntRcvdCount1 [][]int64
+
+	/* clntRcvdCount = make([][]int64, threads)
+	for i := range clntRcvdCount {
+		clntRcvdCount[i] = make([]int64, 2)
+	} */
 	for {
+		clntRcvdCount1 = clntRcvdCount
 		select {
 		// Got a timeout! fail with a timeout error
 		/* case <-timeout:
@@ -133,7 +140,7 @@ func responseTime(threads int) {
 			fmt.Println("avg=", avg/1000000)
 			rspTmAvg = append(rspTmAvg, avg/1000000)
 			for i := 0; i < threads; i++ {
-				total = total + clntRcvdCount[i][0]
+				total = total + clntRcvdCount1[i][0]
 			}
 			tPSAvg = append(tPSAvg, total-totalCrc)
 			fmt.Println("Tps=", total-totalCrc, total, totalCrc)
@@ -185,7 +192,7 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", ttlRspTm, rspTm)
 					os.Exit(1)
 				}
-				responseTimes.AddSample(rspTm)
+				responseTimes.AddSampleInt64(rspTm)
 
 				ttlRspTm = ttlRspTm + rspTm
 
