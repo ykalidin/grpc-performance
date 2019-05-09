@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rameshpolishetti/movingavg/sma"
 	"google.golang.org/grpc"
 )
 
@@ -22,6 +23,10 @@ type ServerStrct struct {
 
 var clntSendCount []int64
 var clntRcvdCount [][]int64
+
+var responseTimes *sma.ThreadSafeSMA
+var rspTmAvg []float64
+var tPSAvg []int64
 
 var clntEOFCount []int
 
@@ -40,16 +45,20 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	defer conn.Close()
 	client := NewPetStoreServiceClient(conn)
 
+	var ma, _ = sma.New(600000)
+	responseTimes = sma.TreadSafeSMA(ma)
+
 	clntSendCount = make([]int64, threads)
 	clntRcvdCount = make([][]int64, threads)
 	for i := range clntRcvdCount {
-		clntRcvdCount[i] = make([]int64, 4)
-		fmt.Println(i)
+		clntRcvdCount[i] = make([]int64, 2)
 	}
 	clntEOFCount = make([]int, threads)
 	exitSignal = false
 
 	fmt.Println("Starting threads", time.Now())
+
+	go responseTime(threads)
 
 	for thread := 0; thread < threads; thread++ {
 		time.Sleep(20 * time.Millisecond)
@@ -64,7 +73,7 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	fmt.Println("Exit signal received", time.Now())
 	exitSignal = true
 	var totalRspTm, totalRspTm1, clntSent, clntRcvd int64
-	var minval, maxval int64
+
 	for {
 		time.Sleep(time.Second)
 		count := 1
@@ -83,8 +92,6 @@ func CallClient(port *string, option *string, name string, data func(data interf
 		}
 		if count != 1 {
 			fmt.Println("All threads completed")
-			minval = clntRcvdCount[0][2]
-			maxval = clntRcvdCount[0][3]
 			for i := 0; i < threads; i++ {
 				totalRspTm = totalRspTm + clntRcvdCount[i][1]
 				if totalRspTm1 > totalRspTm {
@@ -94,28 +101,46 @@ func CallClient(port *string, option *string, name string, data func(data interf
 				clntSent = clntSent + clntSendCount[i]
 				clntRcvd = clntRcvd + clntRcvdCount[i][0]
 				totalRspTm1 = totalRspTm
-
-				if minval > clntRcvdCount[i][2] {
-					minval = clntRcvdCount[i][2]
-				}
-
-				if maxval < clntRcvdCount[i][3] {
-					maxval = clntRcvdCount[i][3]
-				}
 			}
+
+			fmt.Println("clntRcvdCount=", clntRcvdCount)
 			fmt.Println("totalGrpcCallRcv: ", clntRcvd)
 			fmt.Println("totalGrpcCallSent: ", clntSent)
 			fmt.Println("AverageResponseTime:", totalRspTm/clntRcvd)
 			fmt.Println("Threads:", threads)
 			fmt.Println("TimeBtwnMessages:30Ms")
 			fmt.Println("TimeBtwnThread:10Ms")
-			fmt.Println("min tmstmp res: ", minval)
-			fmt.Println("max tmstmp res: ", maxval)
+			fmt.Println("Response Samples: ", rspTmAvg)
+			fmt.Println("TPS Samples: ", tPSAvg)
 
 			return nil, nil
 		}
 	}
 
+}
+
+func responseTime(threads int) {
+	tick := time.Tick(1 * time.Second)
+	var totalCrc, total int64
+	for {
+		select {
+		// Got a timeout! fail with a timeout error
+		/* case <-timeout:
+		goto exitSignal */
+		// Got a tick
+		case <-tick:
+			avg := responseTimes.Avg()
+			fmt.Println("avg=", avg/1000000)
+			rspTmAvg = append(rspTmAvg, avg/1000000)
+			for i := 0; i < threads; i++ {
+				total = total + clntRcvdCount[i][0]
+			}
+			tPSAvg = append(tPSAvg, total-totalCrc)
+			fmt.Println("Tps=", total-totalCrc, total, totalCrc)
+			totalCrc = total
+			total = 0
+		}
+	}
 }
 
 func totalCount(arr []int) int {
@@ -132,7 +157,7 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 		fmt.Println("err1", err)
 		return err
 	}
-	var crc, rspTm, ttlRspTm int64
+	var rspTm, ttlRspTm int64
 	var csc int64
 
 	waitc := make(chan struct{})
@@ -140,7 +165,7 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 		for {
 			user, err := stream.Recv()
 			if err == io.EOF {
-				clntRcvdCount[thread][0] = crc
+				//clntRcvdCount[thread][0] = crc
 				clntRcvdCount[thread][1] = ttlRspTm
 				clntEOFCount[thread] = 1
 				close(waitc)
@@ -153,29 +178,16 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 				return
 			}
 			if user != nil {
-				crc++
+				clntRcvdCount[thread][0]++
 				t1 := time.Now().UnixNano()
 				rspTm = t1 - user.GetTimestamp1()
 				if ttlRspTm > ttlRspTm+rspTm {
 					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", ttlRspTm, rspTm)
 					os.Exit(1)
 				}
+				responseTimes.AddSample(rspTm)
 
 				ttlRspTm = ttlRspTm + rspTm
-
-				if crc == 1 {
-					clntRcvdCount[thread][2] = rspTm
-					clntRcvdCount[thread][3] = rspTm
-				}
-				// min tmstmp check
-				if rspTm < clntRcvdCount[thread][2] {
-					clntRcvdCount[thread][2] = rspTm
-				}
-
-				// max tmstmp check
-				if rspTm > clntRcvdCount[thread][3] {
-					clntRcvdCount[thread][3] = rspTm
-				}
 
 				if data != nil {
 					data(user)
