@@ -22,8 +22,7 @@ type ServerStrct struct {
 	userMapArr map[string]User
 }
 
-var clntSendCount []int64
-var clntRcvdCount [][]int64
+var clntRcvdCount []int64
 
 var responseTimes *sma.ThreadSafeSMA
 var rspTmAvg []float64
@@ -36,12 +35,18 @@ var exitSignal bool
 var totalSc, totalRc int64
 
 func CallClient(port *string, option *string, name string, data func(data interface{}) bool, threads int) (interface{}, error) {
+	hostIP := os.Getenv("HOSTIP")
+	if len(hostIP) == 0 {
+		hostIP = "localhost"
+	}
+
 	clientAddr := *port
 	if len(*port) == 0 {
-		clientAddr = "localhost:9000"
+		clientAddr = hostIP + ":9000"
 	} else {
-		clientAddr = "localhost:" + *port
+		clientAddr = hostIP + ":" + *port
 	}
+
 	conn, err := grpc.Dial(clientAddr, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
@@ -52,11 +57,8 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	var ma, _ = sma.New(600000)
 	responseTimes = sma.TreadSafeSMA(ma)
 
-	clntSendCount = make([]int64, threads)
-	clntRcvdCount = make([][]int64, threads)
-	for i := range clntRcvdCount {
-		clntRcvdCount[i] = make([]int64, 2)
-	}
+	clntRcvdCount = make([]int64, threads)
+
 	clntEOFCount = make([]int, threads)
 
 	exitSignal = false
@@ -77,7 +79,7 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	<-exit
 	fmt.Println("Exit signal received", time.Now())
 	exitSignal = true
-	var totalRspTm, totalRspTm1, clntSent, clntRcvd int64
+	var totalRspTm, totalRspTm1 int64
 
 	for {
 		time.Sleep(time.Second)
@@ -98,27 +100,22 @@ func CallClient(port *string, option *string, name string, data func(data interf
 		if count != 1 {
 			fmt.Println("All threads completed")
 			for i := 0; i < threads; i++ {
-				totalRspTm = totalRspTm + clntRcvdCount[i][1]
+				totalRspTm = totalRspTm + clntRcvdCount[i]
 				if totalRspTm1 > totalRspTm {
 					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", time.Now())
 					os.Exit(1)
 				}
-				clntSent = clntSent + clntSendCount[i]
-				clntRcvd = clntRcvd + clntRcvdCount[i][0]
 				totalRspTm1 = totalRspTm
 			}
 
-			fmt.Println("clntRcvdCount=", clntRcvdCount)
-			fmt.Println("totalGrpcCallRcv: ", clntRcvd)
-			fmt.Println("totalGrpcCallSent: ", clntSent)
-			fmt.Println("AverageResponseTime:", totalRspTm/clntRcvd)
 			fmt.Println("Threads:", threads)
 			fmt.Println("TimeBtwnMessages:30Ms")
-			fmt.Println("TimeBtwnThread:10Ms")
+			fmt.Println("TimeBtwnThread:20Ms")
+			fmt.Println("Atomic send count: ", totalSc)
+			fmt.Println("Atomic receive count: ", totalRc)
+			fmt.Println("AverageResponseTime:", totalRspTm/totalRc)
 			fmt.Println("Response Samples: ", rspTmAvg)
 			fmt.Println("TPS Samples: ", tPSAvg)
-			fmt.Println("send atomic count: ", totalSc)
-			fmt.Println("receive atomic count: ", totalRc)
 
 			return nil, nil
 		}
@@ -128,31 +125,17 @@ func CallClient(port *string, option *string, name string, data func(data interf
 
 func responseTime(threads int) {
 	tick := time.Tick(1 * time.Second)
-	var totalCrc, total int64
-	var clntRcvdCount1 [][]int64
+	var totalCrc int64
 
-	/* clntRcvdCount = make([][]int64, threads)
-	for i := range clntRcvdCount {
-		clntRcvdCount[i] = make([]int64, 2)
-	} */
 	for {
-		clntRcvdCount1 = clntRcvdCount
 		select {
-		// Got a timeout! fail with a timeout error
-		/* case <-timeout:
-		goto exitSignal */
-		// Got a tick
 		case <-tick:
 			avg := responseTimes.Avg()
-			fmt.Println("avg=", avg/1000000)
-			rspTmAvg = append(rspTmAvg, avg/1000000)
-			for i := 0; i < threads; i++ {
-				total = total + clntRcvdCount1[i][0]
-			}
-			tPSAvg = append(tPSAvg, total-totalCrc)
-			fmt.Println("Tps=", total-totalCrc, total, totalCrc)
-			totalCrc = total
-			total = 0
+			rspTmAvg = append(rspTmAvg, avg/float64(1000000))
+
+			tPSAvg = append(tPSAvg, totalRc-totalCrc)
+			fmt.Println("Tps=", totalRc-totalCrc)
+			totalCrc = totalRc
 		}
 	}
 }
@@ -172,15 +155,13 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 		return err
 	}
 	var rspTm, ttlRspTm int64
-	var csc int64
 
 	waitc := make(chan struct{})
 	go func() {
 		for {
 			user, err := stream.Recv()
 			if err == io.EOF {
-				//clntRcvdCount[thread][0] = crc
-				clntRcvdCount[thread][1] = ttlRspTm
+				clntRcvdCount[thread] = ttlRspTm
 				clntEOFCount[thread] = 1
 				close(waitc)
 
@@ -192,7 +173,6 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 				return
 			}
 			if user != nil {
-				clntRcvdCount[thread][0]++
 				atomic.AddInt64(&totalRc, 1)
 				t1 := time.Now().UnixNano()
 				rspTm = t1 - user.GetTimestamp1()
@@ -221,12 +201,10 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 			fmt.Println("error while sending user", user, err)
 			return err
 		}
-		csc++
 		atomic.AddInt64(&totalSc, 1)
 		time.Sleep(30 * time.Millisecond)
 		if exitSignal {
 			fmt.Println("Send Close signal recieved")
-			clntSendCount[thread] = csc
 			break
 		}
 	}
