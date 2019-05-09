@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -32,13 +33,16 @@ var clntEOFCount []int
 
 var exitSignal bool
 
+var totalSc, totalRc int64
+
 func CallClient(port *string, option *string, name string, data func(data interface{}) bool, threads int) (interface{}, error) {
 	clientAddr := *port
 	if len(*port) == 0 {
-		clientAddr = ":9000"
+		clientAddr = "localhost:9000"
+	} else {
+		clientAddr = "localhost:" + *port
 	}
-	clientAddr = ":" + *port
-	conn, err := grpc.Dial("localhost"+clientAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(clientAddr, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
@@ -54,6 +58,7 @@ func CallClient(port *string, option *string, name string, data func(data interf
 		clntRcvdCount[i] = make([]int64, 2)
 	}
 	clntEOFCount = make([]int, threads)
+
 	exitSignal = false
 
 	fmt.Println("Starting threads", time.Now())
@@ -112,6 +117,8 @@ func CallClient(port *string, option *string, name string, data func(data interf
 			fmt.Println("TimeBtwnThread:10Ms")
 			fmt.Println("Response Samples: ", rspTmAvg)
 			fmt.Println("TPS Samples: ", tPSAvg)
+			fmt.Println("send atomic count: ", totalSc)
+			fmt.Println("receive atomic count: ", totalRc)
 
 			return nil, nil
 		}
@@ -179,13 +186,14 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 			}
 			if user != nil {
 				clntRcvdCount[thread][0]++
+				atomic.AddInt64(&totalRc, 1)
 				t1 := time.Now().UnixNano()
 				rspTm = t1 - user.GetTimestamp1()
 				if ttlRspTm > ttlRspTm+rspTm {
 					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", ttlRspTm, rspTm)
 					os.Exit(1)
 				}
-				responseTimes.AddSample(rspTm)
+				responseTimes.AddSampleInt64(rspTm)
 
 				ttlRspTm = ttlRspTm + rspTm
 
@@ -207,6 +215,7 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 			return err
 		}
 		csc++
+		atomic.AddInt64(&totalSc, 1)
 		time.Sleep(30 * time.Millisecond)
 		if exitSignal {
 			fmt.Println("Send Close signal recieved")
