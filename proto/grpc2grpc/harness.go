@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rameshpolishetti/movingavg/cma"
 	"github.com/rameshpolishetti/movingavg/sma"
 	"google.golang.org/grpc"
 )
@@ -24,7 +25,8 @@ type ServerStrct struct {
 
 var clntRcvdCount []int64
 
-var responseTimes *sma.ThreadSafeSMA
+var movingRspTm *sma.ThreadSafeSMA
+var cumulativeRspTm *cma.ThreadSafeCMA
 var rspTmAvg []float64
 var tPSAvg []int64
 
@@ -54,8 +56,11 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	defer conn.Close()
 	client := NewPetStoreServiceClient(conn)
 
-	var ma, _ = sma.New(600000)
-	responseTimes = sma.TreadSafeSMA(ma)
+	ma, _ := sma.New(600000)
+	movingRspTm = sma.GetThreadSafeSMA(ma)
+
+	ma1 := cma.New()
+	cumulativeRspTm = cma.GetThreadSafeCMA(ma1)
 
 	clntRcvdCount = make([]int64, threads)
 
@@ -79,7 +84,6 @@ func CallClient(port *string, option *string, name string, data func(data interf
 	<-exit
 	fmt.Println("Exit signal received", time.Now())
 	exitSignal = true
-	var totalRspTm, totalRspTm1 int64
 
 	for {
 		time.Sleep(time.Second)
@@ -99,23 +103,15 @@ func CallClient(port *string, option *string, name string, data func(data interf
 		}
 		if count != 1 {
 			fmt.Println("All threads completed")
-			for i := 0; i < threads; i++ {
-				totalRspTm = totalRspTm + clntRcvdCount[i]
-				if totalRspTm1 > totalRspTm {
-					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", time.Now())
-					os.Exit(1)
-				}
-				totalRspTm1 = totalRspTm
-			}
 
 			fmt.Println("Threads:", threads)
 			fmt.Println("TimeBtwnMessages:30Ms")
 			fmt.Println("TimeBtwnThread:20Ms")
 			fmt.Println("Atomic send count: ", totalSc)
 			fmt.Println("Atomic receive count: ", totalRc)
-			fmt.Println("AverageResponseTime:", totalRspTm/totalRc)
 			fmt.Println("Response Samples: ", rspTmAvg)
 			fmt.Println("TPS Samples: ", tPSAvg)
+			fmt.Println("AverageResponseTime:", cumulativeRspTm.Avg())
 
 			return nil, nil
 		}
@@ -130,7 +126,7 @@ func responseTime(threads int) {
 	for {
 		select {
 		case <-tick:
-			avg := responseTimes.Avg()
+			avg := movingRspTm.Avg()
 			rspTmAvg = append(rspTmAvg, avg/float64(1000000))
 
 			tPSAvg = append(tPSAvg, totalRc-totalCrc)
@@ -176,13 +172,8 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 				atomic.AddInt64(&totalRc, 1)
 				t1 := time.Now().UnixNano()
 				rspTm = t1 - user.GetTimestamp1()
-				if ttlRspTm > ttlRspTm+rspTm {
-					fmt.Println("@@@@@@@@@@@@@ Overflow Error @@@@@@@@@@@@@", ttlRspTm, rspTm)
-					os.Exit(1)
-				}
-				responseTimes.AddSampleInt64(rspTm)
-
-				ttlRspTm = ttlRspTm + rspTm
+				movingRspTm.AddSampleInt64(rspTm)
+				cumulativeRspTm.AddSampleInt64(rspTm)
 
 				if data != nil {
 					data(user)
