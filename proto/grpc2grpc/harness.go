@@ -42,7 +42,7 @@ func CallClient(port *string, option *string, name string, data func(data interf
 		hostIP = "localhost"
 	}
 
-	clientAddr := *port
+	var clientAddr string
 	if len(*port) == 0 {
 		clientAddr = hostIP + ":9000"
 	} else {
@@ -74,7 +74,6 @@ func CallClient(port *string, option *string, name string, data func(data interf
 
 	for thread := 0; thread < threads; thread++ {
 		time.Sleep(20 * time.Millisecond)
-		fmt.Println(thread)
 		go bulkUsers(client, data, thread)
 	}
 	fmt.Println("All Threads Activated", time.Now())
@@ -127,8 +126,7 @@ func responseTime(threads int) {
 		select {
 		case <-tick:
 			avg := movingRspTm.Avg()
-			rspTmAvg = append(rspTmAvg, avg/float64(1000000))
-
+			rspTmAvg = append(rspTmAvg, avg/1000000.0)
 			tPSAvg = append(tPSAvg, totalRc-totalCrc)
 			fmt.Println("Tps=", totalRc-totalCrc)
 			totalCrc = totalRc
