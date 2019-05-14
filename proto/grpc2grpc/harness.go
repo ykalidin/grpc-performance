@@ -36,13 +36,15 @@ var exitSignal bool
 
 var totalSc, totalRc int64
 
+var minRT, maxRT int64 = 1000000000, 0
+
 func CallClient(port *string, option *string, name string, data func(data interface{}) bool, threads int) (interface{}, error) {
 	hostIP := os.Getenv("HOSTIP")
 	if len(hostIP) == 0 {
 		hostIP = "localhost"
 	}
 
-	var clientAddr string
+	clientAddr := *port
 	if len(*port) == 0 {
 		clientAddr = hostIP + ":9000"
 	} else {
@@ -74,6 +76,7 @@ func CallClient(port *string, option *string, name string, data func(data interf
 
 	for thread := 0; thread < threads; thread++ {
 		time.Sleep(20 * time.Millisecond)
+		fmt.Println(thread)
 		go bulkUsers(client, data, thread)
 	}
 	fmt.Println("All Threads Activated", time.Now())
@@ -111,6 +114,8 @@ func CallClient(port *string, option *string, name string, data func(data interf
 			fmt.Println("Response Samples: ", rspTmAvg)
 			fmt.Println("TPS Samples: ", tPSAvg)
 			fmt.Println("AverageResponseTime:", cumulativeRspTm.Avg())
+			fmt.Println("slow response time: ", maxRT)
+			fmt.Println("fast response time: ", minRT)
 
 			return nil, nil
 		}
@@ -119,16 +124,19 @@ func CallClient(port *string, option *string, name string, data func(data interf
 }
 
 func responseTime(threads int) {
-	tick := time.Tick(1 * time.Second)
+	tick := time.Tick(6 * time.Second)
 	var totalCrc int64
 
 	for {
 		select {
 		case <-tick:
 			avg := movingRspTm.Avg()
-			rspTmAvg = append(rspTmAvg, avg/1000000.0)
+			rspTmAvg = append(rspTmAvg, avg/float64(1000000))
+
 			tPSAvg = append(tPSAvg, totalRc-totalCrc)
-			fmt.Println("Tps=", totalRc-totalCrc)
+
+			//fmt.Println("Tps=", totalRc-totalCrc)
+
 			totalCrc = totalRc
 		}
 	}
@@ -172,7 +180,16 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 				rspTm = t1 - user.GetTimestamp1()
 				movingRspTm.AddSampleInt64(rspTm)
 				cumulativeRspTm.AddSampleInt64(rspTm)
+				if rspTm > 1000000000 {
+					fmt.Println("Response Time:", rspTm, time.Now())
+				}
+				if rspTm < minRT {
+					atomic.StoreInt64(&minRT, rspTm)
+				}
 
+				if rspTm > maxRT {
+					atomic.StoreInt64(&maxRT, rspTm)
+				}
 				if data != nil {
 					data(user)
 				}
@@ -191,7 +208,7 @@ func bulkUsers(client PetStoreServiceClient, data func(data interface{}) bool, t
 			return err
 		}
 		atomic.AddInt64(&totalSc, 1)
-		time.Sleep(30 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		if exitSignal {
 			fmt.Println("Send Close signal recieved")
 			break
