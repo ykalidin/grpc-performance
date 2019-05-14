@@ -1,5 +1,5 @@
 # grpc-performance
-This is a gRPC Bidirectional Streaming example.The messages stream from gRPC client-->Gateway-->gRPC Echo Server-->Gateway-->gRPC Client.
+This document contains steps to evaluate gRPC performance using gRPC bidirectional streaming example.The messages stream from gRPC client-->Gateway-->gRPC Echo Server-->Gateway-->gRPC Client.
 
 The gRPC Client outputs the Number of messages sent and received, Average Response Time taken by all the requests, Moving Average Response Time and Transactions per second values.
 
