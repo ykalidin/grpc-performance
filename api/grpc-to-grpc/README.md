@@ -6,8 +6,8 @@ This recipe is a proxy gateway for gRPC end points.
 
 ## Setup
 ```bash
-git clone https://github.com/project-flogo/grpc
-cd grpc/examples/api/grpc-to-grpc
+git clone https://github.com/ykalidin/grpc-performance.git
+cd grpc-performance/api/grpc-to-grpc
 go build
 ```
 
