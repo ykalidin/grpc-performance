@@ -12,51 +12,20 @@ go build
 ```
 
 ## Testing
-Start proxy gateway:
+1)Start proxy gateway:
 ```bash
+export FLOGO_LOG_LEVEL=ERROR
 FLOGO_RUNNER_TYPE=DIRECT ./grpc-to-grpc
 ```
 
-Start sample gRPC server.
+2)Start sample gRPC server in another terminal.
 ```bash
 ./grpc-to-grpc -server
 ```
 
-### #1 Testing PetById method
-Run sample gRPC client.
+3)Now run gRPC client in new terminal.
 ```bash
-./grpc-to-grpc -client -port 9096 -method pet -param 2
-```
-Now you should see logs in proxy gateway terminal and sample gRPC server terminal. Sample output in client terminal can be seen as below.
-```
-res : pet:<id:2 name:"cat2" >
-```
-### #2 Testing UserByName method
-Run sample gRPC client.
-```bash
-./grpc-to-grpc -client -port 9096 -method user -param user2
-```
-Output can be seen as below.
-```
-res : user:<id:2 username:"user2" email:"email2" phone:"phone2" >
-```
-### #3 Testing ListUsers(Server Streaming) method
-Run sample gRPC client.
-```bash
-./grpc-to-grpc -client -port 9096 -method listusers
-```
-Streaming data can be observed at client side. Interrupt the sample server to stop streaming.
+./grpc-to-grpc -client -port 9096 -param 3 -number 2000
+``` 
 
-### #4 Testing StoreUsers(Client Streaming) method
-Run sample gRPC client.
-```bash
-./grpc-to-grpc -client -port 9096 -method storeusers
-```
-Streaming data can be observed at server side. Interrupt the client to stop streaming.
-
-### #5 Testing BulkUsers(Bidirectional Streaming) method
-Run sample gRPC client.
-```bash
-./grpc-to-grpc -client -port 9096 -method bulkusers
-```
-Streaming data can be observed at both client and server side. One second delay is kept for veiwing purpose.
+The test will be completed in 2 minutes and the results will be displayed in the client terminal.
