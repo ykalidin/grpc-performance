@@ -117,16 +117,16 @@ var cumulativeRspTm *cma.ThreadSafeCMA
 var exitSignal bool
 
 func CallClient(port *string, threads int, name string) (interface{}, error) {
-	hostIP := os.Getenv("HOSTIP")
-	if len(hostIP) == 0 {
-		hostIP = "localhost"
+	gwIP := os.Getenv("GWIP")
+	if len(gwIP) == 0 {
+		gwIP = "localhost"
 	}
 
 	clientAddr := *port
 	if len(*port) == 0 {
-		clientAddr = hostIP + ":9000"
+		clientAddr = gwIP + ":9000"
 	} else {
-		clientAddr = hostIP + ":" + *port
+		clientAddr = gwIP + ":" + *port
 	}
 
 	conn, err := grpc.Dial(clientAddr, grpc.WithInsecure())
