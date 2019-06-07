@@ -8,7 +8,7 @@ require (
 	github.com/project-flogo/contrib/activity/rest v0.9.0
 	github.com/project-flogo/contrib/trigger/rest v0.9.0
 	github.com/project-flogo/core v0.9.1
-	github.com/project-flogo/grpc v0.0.0-20190402024423-45a09db409b6
+	github.com/project-flogo/grpc v0.0.0-20190517085040-1c4c20d12a63
 	github.com/project-flogo/microgateway v0.0.0-20190319203104-747b5cae041f
 	github.com/rameshpolishetti/movingavg v0.0.0-20190509113126-272fd7f9a9e2
 	golang.org/x/net v0.0.0-20190606173856-1492cefac77f
