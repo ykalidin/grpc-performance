@@ -12,7 +12,7 @@ go build
 ```
 
 ## Testing
-1)Start sample gRPC server in another terminal.
+1)Start sample gRPC server:
 ```bash
 ./grpc-to-grpc -server
 ```
@@ -29,7 +29,7 @@ export FLOGO_LOG_LEVEL=ERROR
 FLOGO_RUNNER_TYPE=DIRECT ./grpc-to-grpc
 ```
 
-3)Now run gRPC client in new terminal.
+3)Run gRPC client:
 
 Note: If the proxy gateway is running in a different system please set the GWIP variable to corresponding system IP before starting the client.
 
